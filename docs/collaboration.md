@@ -205,67 +205,63 @@ Each person works on a separate Git feature branch and a set of files that do no
 
 ---
 
-### Person A – Objectives & Complexity Metrics
-**Branch:** `feature/objectives`
+### Person A – Objectives, Complexity Metrics & NSGA-II Engine
+**Branch:** `feature/moo-core`
 
-Person A is responsible for defining the new `ComplexityMetric` component type and implementing all built-in complexity metrics that the MOO extension will optimise alongside the existing performance (fitness) metrics.
+Person A is responsible for the two foundational layers of the MOO extension: the new objective/metric system (complexity metrics + performance objective adapter) and the full NSGA-II evolutionary engine. These two pieces are tightly coupled — the engine consumes the objective interface directly — so it is most efficient for one person to own both.
 
 **What to do:**
 
-Person A must first study `src/kartezio/core/components.py` closely, particularly how the `@fundamental()` decorator, the `@register()` decorator, and the `Components` registry work. The existing `Fitness` base class in `src/kartezio/core/fitness.py` is the model to follow — `ComplexityMetric` should mirror the same pattern so that users can register their own custom complexity metrics using `@register(ComplexityMetric)`, exactly as they can register custom fitness metrics today.
+Person A must start by studying `src/kartezio/core/components.py` closely, particularly how the `@fundamental()` decorator, the `@register()` decorator, and the `Components` registry work. The existing `Fitness` base class in `src/kartezio/core/fitness.py` is the model to follow for the metric side. For the engine side, Person A must read `src/kartezio/evolution/base.py` and `src/kartezio/evolution/strategy.py` to understand the existing 1+λ evolution loop and the `step()` hook before implementing NSGA-II.
 
-Person A must then implement the following:
+Person A must implement the following, in roughly this order (each builds on the previous):
 
 1. `src/kartezio/moo/objectives.py` — Define the abstract `ComplexityMetric` base class decorated with `@fundamental()`. It must expose a single abstract method `evaluate(individual, context) -> float` that every built-in and user-supplied metric must implement. Also define a thin `PerformanceObjective` adapter that wraps the existing `Fitness` classes so they can be treated as one of the MOO objectives without any change to the original code.
 
 2. `src/kartezio/moo/complexity.py` — Implement the three built-in complexity metrics that inherit from `ComplexityMetric`:
-   - `ActiveNodeCount`: counts the number of active (non-silent) nodes in the CGP graph of an individual. To compute this, Person A must call `decoder.parse_to_graphs(genotype)` and count the unique active nodes across all outputs.
-   - `ProcessTime`: reads the per-individual wall-clock inference time that is already stored in `population.score.time` (populated in `src/kartezio/evolution/decoder.py` at line 189 via `population.set_time(i, t)`). It simply returns that stored value without re-running inference.
-   - `OperationCount`: counts the total number of arithmetic/morphological operations performed by the active nodes (i.e., the sum of the arities of all active nodes).
+   - `ActiveNodeCount`: counts the number of active (non-silent) nodes in the CGP graph of an individual. Call `decoder.parse_to_graphs(genotype)` and count unique active nodes across all outputs.
+   - `ProcessTime`: reads the per-individual wall-clock inference time already stored in `population.score.time` (populated in `src/kartezio/evolution/decoder.py` at line 189 via `population.set_time(i, t)`). Returns that stored value without re-running inference.
+   - `OperationCount`: counts the total number of arithmetic/morphological operations performed by the active nodes (sum of arities of all active nodes).
 
-3. `src/kartezio/moo/__init__.py` — Export `ComplexityMetric`, `PerformanceObjective`, `ActiveNodeCount`, `ProcessTime`, and `OperationCount` so users can import them with `from kartezio.moo import ComplexityMetric`.
+3. `src/kartezio/moo/dominance.py` — Implement fast non-dominated sorting (the standard NSGA-II procedure). Provide a `dominates(a, b)` function that returns `True` if individual `a` Pareto-dominates individual `b` across all objective values. Build on this a `non_dominated_sort(population)` function that assigns a Pareto rank to every individual, and a `crowding_distance(front)` function that computes crowding distance for each individual within a single front.
+
+4. `src/kartezio/moo/population.py` — Define `MOOPopulation`, a container that extends the existing `Population` with: an `objectives` matrix (one column per objective), a `ranks` vector (Pareto rank per individual), a `crowding` vector (crowding distance per individual), and a `robustness` dict that maps each solution index to its per-perturbation robustness scores (filled later by Person B). This class must be initialised by the trainer and filled by the NSGA-II strategy each generation.
+
+5. `src/kartezio/moo/strategy.py` — Implement `NSGAIIStrategy`. This class must expose a `step(population, objectives)` method that (a) evaluates all objective functions for every individual, (b) calls `non_dominated_sort` and `crowding_distance` from `dominance.py`, (c) selects the next generation's survivors by preferring lower rank and, as a tie-breaker, higher crowding distance, and (d) returns the updated `MOOPopulation`. The `step()` method is called by the existing `evolve()` loop in `base.py` via the `hasattr(strategy, "step")` hook — Person A must **not** modify `base.py`.
+
+6. `src/kartezio/moo/trainer.py` — Implement `KartezioMOOTrainer`. It accepts a list of objective instances (a mix of `PerformanceObjective` and `ComplexityMetric` subclasses), builds an `NSGAIIStrategy`, runs evolution, and exposes a `fit(n_generations, x_train, y_train, x_test, y_test, callbacks=None)` method. After the evolution loop completes, `fit()` must call `robustness.evaluate_pareto_front(...)` (implemented by Person B) and then `robustness.summarise(...)` so the user sees the full results table on the console automatically. The method returns the fully annotated `MOOPopulation`.
+
+7. `src/kartezio/moo/pareto.py` — Utility functions: `extract_front(population)` to pull out rank-0 individuals, `select_knee_point(front)` to pick the best-balanced solution, and `to_dataframe(front)` to produce a `pandas.DataFrame` suitable for CSV or notebook use.
+
+8. `src/kartezio/moo/__init__.py` — Export all public symbols from the above modules so users can write `from kartezio.moo import KartezioMOOTrainer, ComplexityMetric, ActiveNodeCount`.
 
 **What to write:**
 
-Every new file must start with the mandatory licence header (see § 5.1). Every class and method must have a docstring. Inline comments must be written in plain English and must explain *why* a design choice was made, not just *what* the code does.
+Every new file must start with the mandatory licence header (see § 5.1). Every class and method must have a docstring. Inline comments must explain *why* a design choice was made, not just *what* the code does. Any time Person A touches an original Kartezio file (e.g., if `population.py` in `evolution/` needs a minor addition), the change must be wrapped in a `BEGIN/END KARTEZIO-MOO MODIFICATION` block (see § 5.2) and reviewed by the team before merging.
 
-Person A does **not** touch any existing file outside `src/kartezio/moo/`. If a bug is discovered in the original code during this work, it must be reported to the team rather than fixed unilaterally.
+Person A does **not** touch `src/kartezio/moo/robustness.py` — that belongs to Person B.
 
 ---
 
-### Person B – NSGA-II Engine & Robustness Evaluation
-**Branch:** `feature/nsga2`
+### Person B – Robustness Evaluation
+**Branch:** `feature/robustness`
 
-Person B is responsible for the entire multi-objective evolutionary engine — Pareto dominance logic, the MOO population container, the NSGA-II selection strategy, the high-level training interface, the Pareto-front utilities — **and** for the post-hoc robustness evaluation module. Robustness evaluation is not an optional add-on; it is a mandatory step that runs automatically after evolution finishes and whose results are always returned to the user alongside the Pareto front.
+Person B is responsible for the post-hoc robustness evaluation module. This is a **core feature** of the project, not a testing utility. Every pipeline that makes it onto the Pareto front is automatically subjected to a battery of image perturbations and its robustness is measured and reported to the user. Person B owns everything related to how those perturbations are applied, how the results are measured, and how they are presented.
 
 **What to do:**
 
-Person B must first read `src/kartezio/evolution/base.py` and `src/kartezio/evolution/strategy.py` to understand how the existing 1+λ evolution loop and the `step()` hook work. The existing `KartezioTrainer` class is the model that the new `KartezioMOOTrainer` wraps.
+Person B must first understand the `MOOPopulation` structure defined by Person A (particularly the `robustness` dict field) and the `KartezioMOOTrainer.fit()` signature, since `robustness.evaluate_pareto_front` will be called from inside the trainer. Person B must coordinate with Person A on the exact call signature before writing the implementation.
 
 Person B must implement the following:
 
-1. `src/kartezio/moo/dominance.py` — Implement fast non-dominated sorting (the standard NSGA-II procedure). Provide a `dominates(a, b)` function that returns `True` if individual `a` Pareto-dominates individual `b` across all objective values. Build on top of this a `non_dominated_sort(population)` function that assigns a Pareto rank to every individual, and a `crowding_distance(front)` function that computes the crowding distance for each individual within a single front.
-
-2. `src/kartezio/moo/population.py` — Define `MOOPopulation`, a container that extends the existing `Population` with additional arrays: an `objectives` matrix (one column per objective), a `ranks` vector (Pareto rank per individual), a `crowding` vector (crowding distance per individual), and a `robustness` dict that maps each solution index to its per-perturbation robustness scores. This class must be initialised by the trainer and filled by the NSGA-II strategy each generation.
-
-3. `src/kartezio/moo/strategy.py` — Implement `NSGAIIStrategy`. This class must expose a `step(population, objectives)` method that (a) evaluates all objective functions for every individual in the population, (b) calls `non_dominated_sort` and `crowding_distance` from `dominance.py`, (c) selects the next generation's survivors by preferring lower rank and, as a tie-breaker, higher crowding distance, and (d) returns the updated `MOOPopulation`. The `step()` method is called by the existing `evolve()` loop in `base.py` via the `hasattr(strategy, "step")` hook that is already present in the code — Person B must not modify `base.py` to make this work.
-
-4. `src/kartezio/moo/robustness.py` — Implement the post-hoc robustness evaluation engine. This is a **core feature** of the project, not a testing utility. The module must:
-   - Define a `RobustnessSuite` class that holds a configurable list of image perturbations. Each perturbation is a callable that takes a single image and returns a perturbed version of it. The built-in perturbations to include are: Gaussian noise (several σ levels), Gaussian blur (several kernel sizes), brightness shift (±20, ±40 intensity units), contrast scaling (0.5×, 2×), and JPEG compression (quality 30, 60).
    - Provide an `evaluate_pipeline(decoder, genotype, x_test, y_test, fitness_fn, suite)` function that runs inference on each test image under each perturbation, computes the fitness drop relative to the clean-image baseline, and returns a structured `RobustnessReport` object. The `RobustnessReport` holds: the mean and standard deviation of the fitness drop per perturbation type, an overall robustness score (mean fitness retention across all perturbations, in the range [0, 1]), and a per-image breakdown.
    - Provide an `evaluate_pareto_front(front, decoder, x_test, y_test, fitness_fn, suite=None)` function that calls `evaluate_pipeline` for every solution in the Pareto front and attaches the `RobustnessReport` to each solution in the `MOOPopulation.robustness` dict.
    - Provide a `summarise(front_with_robustness)` function that prints a human-readable table to stdout showing, for each solution in the Pareto front: its Pareto rank, each objective value, and its overall robustness score. This is the **primary way results are presented to the user** after training.
    - Provide a `to_dataframe(front_with_robustness)` function that returns a `pandas.DataFrame` containing the same information as `summarise`, suitable for saving to CSV or plotting.
 
-5. `src/kartezio/moo/trainer.py` — Implement `KartezioMOOTrainer`. It accepts a list of objective instances, builds an `NSGAIIStrategy`, runs evolution, and exposes a `fit(n_generations, x_train, y_train, x_test, y_test, callbacks=None)` method. After the evolution loop completes, `fit()` must automatically call `robustness.evaluate_pareto_front(...)` and then call `robustness.summarise(...)` so the user sees the full results table on the console without having to do anything extra. The method returns the fully annotated `MOOPopulation` (Pareto front with objective values and robustness scores attached).
-
-6. `src/kartezio/moo/pareto.py` — Utility functions for working with the Pareto front after evolution: `extract_front(population)` to pull out rank-0 individuals, `select_knee_point(front)` to pick the single solution that best balances all objectives, and `to_dataframe(front)` to produce a `pandas.DataFrame` suitable for saving to CSV or displaying in a notebook.
-
 **What to write:**
 
-Every new file starts with the licence header (§ 5.1). Any time Person B needs to interact with the original `decoder.py` or `population.py` code in a way that requires a change to those files, they must wrap the change in the `BEGIN/END KARTEZIO-MOO MODIFICATION` comment block (see § 5.2) and open a separate minimal PR for that change so the whole team can review it.
-
-Person B does **not** modify `objectives.py` or `complexity.py` — those belong to Person A.
+`robustness.py` must start with the mandatory licence header (§ 5.1). Every class and function must have a full docstring including parameter types and a description of what is returned. The perturbation implementations must use OpenCV (`cv2`) for consistency with the rest of the codebase. Person B must not modify any file outside `src/kartezio/moo/robustness.py`.
 
 ---
 
