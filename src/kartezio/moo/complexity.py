@@ -1,18 +1,15 @@
 # -------------------------------------------------------------------------
-# Kartezio – Multi‑Objective Extension (NSGA‑II)
-# Copyright (c) 2024‑2026 Inserm Transfert SA and co‑owners
+# Kartezio - Multi-Objective Extension (NSGA-II)
+# Copyright (c) 2024-Present Inserm Transfert SA and co-owners
 # Licensed under the same licence as the original Kartezio source code
 # (see ../LICENSE).  This file may be used, modified and redistributed
-# for non‑commercial research only, and must retain this header.
+# for non-commercial research only, and must retain this header.
 # -------------------------------------------------------------------------
 """
 Complexity and resource metrics for Multi-Objective Optimization (MOO).
 
-This module implements the concrete ComplexityMetric components:
-1. ProcessTime: Measures empirical wall-clock inference latency per image (retrieved
-   from population cache without redundant re-execution).
-2. ActiveNodeCount: Counts unique non-silent computational nodes in the active graph
-   (hardware-agnostic structural metric).
+Implements concrete metrics to evaluate pipeline efficiency, including
+cached inference latency (ProcessTime) and active node count (ActiveNodeCount).
 """
 from typing import Any, Optional, Set, Tuple
 
@@ -24,54 +21,24 @@ from kartezio.moo.objectives import ComplexityMetric
 @register(ComplexityMetric)
 class ProcessTime(ComplexityMetric):
     """
-    Measures the inference latency (mean wall-clock time per image in seconds).
+    Measures the inference latency of an individual in seconds.
 
-    To avoid expensive redundant inference during the evolutionary loop, this metric
-    reads the wall-clock execution time pre-recorded in `population.score.time`
-    (populated during `DecoderCGP.decode_population()`). If called in a standalone
-    context where time is not yet measured, it provides a dynamic evaluation fallback.
-
-    Attributes
-    ----------
-    name : str
-        Metric identifier, defaults to "ProcessTime".
-    minimize : bool
-        Always True, as lower inference latency is preferred.
+    Reads pre-recorded wall-clock execution time from population scores to avoid
+    costly redundant inference, with a dynamic decoding fallback for standalone use.
     """
 
     def __init__(self, name: Optional[str] = None):
-        """
-        Initialize the ProcessTime complexity metric.
-
-        Parameters
-        ----------
-        name : str, optional
-            Custom name for this metric. Defaults to "ProcessTime".
-        """
+        """Initialize the ProcessTime metric to minimize inference latency."""
         super().__init__(name=name or "ProcessTime", minimize=True)
 
     def evaluate(self, individual: Any, context: Any = None) -> float:
         """
-        Retrieve the inference time for the given individual.
+        Retrieve or measure the wall-clock execution time for an individual.
 
-        Supports dynamic context extraction without rigid caller coupling:
-        - Direct Population object with `score.time`
-        - EvaluationContext or dict containing `population` and optional `index`
-        - Standalone fallback: executes `decoder.decode(genotype, x)` if time is not cached.
-
-        Parameters
-        ----------
-        individual : Any
-            The individual genotype or integer index within the population.
-        context : Any, optional
-            Context containing the evaluated Population instance or score metadata.
-
-        Returns
-        -------
-        float
-            Mean wall-clock inference time per image in seconds.
+        Extracts the cached runtime from the population score, or invokes the decoder
+        to time execution on the test batch if no cache is available.
         """
-        # Strategy 1: Context is directly a Population instance (or object with score.time)
+        # 1. Check direct population score
         if hasattr(context, "score") and hasattr(context.score, "time"):
             if isinstance(individual, int):
                 return float(context.score.time[individual])
@@ -79,13 +46,13 @@ class ProcessTime(ComplexityMetric):
                 idx = context.individuals.index(individual)
                 return float(context.score.time[idx])
 
-        # Strategy 2: Context contains a .population attribute
+        # 2. Check population attribute in context
         if hasattr(context, "population") and hasattr(context.population, "score"):
             idx = getattr(context, "index", individual)
             if isinstance(idx, int):
                 return float(context.population.score.time[idx])
 
-        # Strategy 3: Context is a dictionary
+        # 3. Check dictionary context
         if isinstance(context, dict):
             if "time" in context:
                 time_val = context["time"]
@@ -98,7 +65,7 @@ class ProcessTime(ComplexityMetric):
                 if isinstance(idx, int):
                     return float(pop.score.time[idx])
 
-        # Strategy 4: Dynamic evaluation fallback (e.g. for standalone testing)
+        # 4. Fallback: run decoder directly if unmeasured
         decoder = getattr(context, "decoder", None)
         x_data = getattr(context, "x", None)
         if isinstance(context, dict):
@@ -122,24 +89,10 @@ class ProcessTime(ComplexityMetric):
 @register(ComplexityMetric)
 class ActiveNodeCount(ComplexityMetric):
     """
-    Counts the number of active (non-silent) processing nodes in an individual's CGP graph.
+    Counts the number of active, non-silent processing nodes in an individual's CGP graph.
 
-    In Cartesian Genetic Programming, genotypes contain non-coding ('silent') nodes that
-    provide neutral mutations and evolutionary drift. This metric parses the Directed
-    Acyclic Graph (DAG) backwards from the outputs to isolate only the nodes that actively
-    contribute to the final prediction.
-
-    This metric is 100% deterministic and hardware-independent.
-
-    Attributes
-    ----------
-    name : str
-        Metric identifier, defaults to "ActiveNodeCount".
-    minimize : bool
-        Always True, as fewer active nodes reflect a simpler, more efficient pipeline.
-    decoder : DecoderCGP, optional
-        Reference to the decoder used to parse genotypes into graphs. Can also be
-        provided dynamically via context during evaluation.
+    Traces the computational Directed Acyclic Graph (DAG) backwards from output nodes to isolate
+    only the active operations, providing a deterministic and hardware-independent metric.
     """
 
     def __init__(
@@ -147,21 +100,12 @@ class ActiveNodeCount(ComplexityMetric):
         decoder: Optional[DecoderCGP] = None,
         name: Optional[str] = None,
     ):
-        """
-        Initialize the ActiveNodeCount complexity metric.
-
-        Parameters
-        ----------
-        decoder : DecoderCGP, optional
-            The CGP decoder instance. If omitted here, it must be provided in context.
-        name : str, optional
-            Custom display name. Defaults to "ActiveNodeCount".
-        """
+        """Initialize the ActiveNodeCount metric with an optional pre-configured CGP decoder."""
         super().__init__(name=name or "ActiveNodeCount", minimize=True)
         self.decoder = decoder
 
     def _resolve_decoder(self, context: Any) -> DecoderCGP:
-        """Resolve the decoder instance from self or context."""
+        """Resolve the DecoderCGP instance from internal attributes or evaluation context."""
         if self.decoder is not None:
             return self.decoder
         if hasattr(context, "decoder"):
@@ -174,7 +118,7 @@ class ActiveNodeCount(ComplexityMetric):
         )
 
     def _resolve_genotype(self, individual: Any, context: Any) -> Genotype:
-        """Resolve the Genotype object from individual or context."""
+        """Extract the Genotype object from the individual or population context."""
         if isinstance(individual, Genotype):
             return individual
         if isinstance(individual, int):
@@ -192,28 +136,15 @@ class ActiveNodeCount(ComplexityMetric):
 
     def evaluate(self, individual: Any, context: Any = None) -> float:
         """
-        Count the number of unique active computational nodes.
+        Count active processing nodes in the CGP graph, excluding input channels.
 
-        Excludes input channels (nodes with indices < n_inputs) to count only
-        functional image-processing operations.
-
-        Parameters
-        ----------
-        individual : Genotype or int
-            The individual or its index in the population.
-        context : Any, optional
-            Evaluation context containing the decoder or population.
-
-        Returns
-        -------
-        float
-            The total count of active computational nodes.
+        Parses the genotype into chromosome graphs and counts unique functional
+        nodes that actively contribute to the output predictions.
         """
         decoder = self._resolve_decoder(context)
         genotype = self._resolve_genotype(individual, context)
         n_inputs = decoder.adapter.n_inputs
 
-        # parse_to_graphs returns phenotype: list of graphs per chromosome
         phenotype = decoder.parse_to_graphs(genotype)
 
         unique_active_nodes: Set[Tuple[str, Any, int]] = set()
@@ -222,7 +153,6 @@ class ActiveNodeCount(ComplexityMetric):
             for graph in chromosome_graphs:
                 for node in graph:
                     node_index, type_index = node
-                    # Exclude raw input channels; count only active processing nodes
                     if node_index >= n_inputs:
                         unique_active_nodes.add(
                             (chromosome_name, type_index, node_index)

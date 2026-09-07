@@ -1,6 +1,6 @@
 # -------------------------------------------------------------------------
 # Kartezio – Multi‑Objective Extension (NSGA‑II)
-# Copyright (c) 2024‑2026 Inserm Transfert SA and co‑owners
+# Copyright (c) 2024‑Present Inserm Transfert SA and co‑owners
 # Licensed under the same licence as the original Kartezio source code
 # (see ../LICENSE).  This file may be used, modified and redistributed
 # for non‑commercial research only, and must retain this header.
@@ -8,11 +8,8 @@
 """
 Objectives and adapter interfaces for Multi-Objective Optimization (MOO).
 
-This module defines:
-1. ComplexityMetric: The fundamental abstract base class for all computational
-   and resource metrics (e.g., latency, active node count, operation count).
-2. PerformanceObjective: An adapter that wraps existing Kartezio Fitness classes
-   to provide a uniform evaluation interface within MOO evolutionary loops.
+Provides the abstract ComplexityMetric base class for evaluating resource usage
+and the PerformanceObjective adapter to wrap existing Kartezio Fitness functions.
 """
 from abc import ABC, abstractmethod
 from typing import Any, Optional
@@ -31,32 +28,14 @@ from kartezio.types import DataBatch, DataPopulation
 @fundamental()
 class ComplexityMetric(KartezioComponent, ABC):
     """
-    Abstract base class for all complexity and resource metrics in Kartezio MOO.
+    Abstract base class for computational and resource metrics in MOO.
 
-    Inherits from KartezioComponent and ABC, and registers as a fundamental
-    component under Kartezio's registry system via the `@fundamental()` decorator.
-
-    Attributes
-    ----------
-    name : str
-        Human-readable name of the metric used in logs, reports, and summary tables.
-    minimize : bool
-        Flag indicating whether this metric should be minimized (True) or
-        maximized (False) during multi-objective Pareto optimization. Default is True.
+    Inherits from KartezioComponent and registers as a fundamental component.
+    All complexity metrics define a scalar evaluation score and are minimized by default.
     """
 
     def __init__(self, name: Optional[str] = None, minimize: bool = True):
-        """
-        Initialize the complexity metric.
-
-        Parameters
-        ----------
-        name : str, optional
-            Custom name for the metric. If None, uses the class name from registry.
-        minimize : bool, default=True
-            Optimization direction. Most complexity metrics (latency, node count)
-            are minimized.
-        """
+        """Initialize the complexity metric with an optional display name and optimization direction."""
         super().__init__()
         if name is not None:
             self.name = name
@@ -65,33 +44,15 @@ class ComplexityMetric(KartezioComponent, ABC):
     @abstractmethod
     def evaluate(self, individual: Any, context: Any = None) -> float:
         """
-        Evaluate the complexity metric for a given individual.
+        Evaluate and return the scalar complexity score for a given individual.
 
-        Parameters
-        ----------
-        individual : Any
-            The individual to evaluate. Can be a Genotype instance, an index in
-            the population, or an individual object depending on the caller.
-        context : Any, optional
-            Evaluation context providing access to the population, decoder,
-            input data, or pre-computed metrics.
-
-        Returns
-        -------
-        float
-            The evaluated scalar complexity metric score.
+        Concrete metrics implement this method using the individual's genotype
+        or execution metadata provided in the context.
         """
         pass
 
     def __to_dict__(self) -> dict:
-        """
-        Serialize metric metadata to a dictionary for reproducibility.
-
-        Returns
-        -------
-        dict
-            Dictionary containing component parameters.
-        """
+        """Serialize metric configuration and parameters to a dictionary for reproducibility."""
         return {
             "name": self.name,
             "args": {
@@ -101,19 +62,7 @@ class ComplexityMetric(KartezioComponent, ABC):
 
     @classmethod
     def __from_dict__(cls, dict_infos: dict) -> "ComplexityMetric":
-        """
-        Instantiate a ComplexityMetric from its dictionary representation.
-
-        Parameters
-        ----------
-        dict_infos : dict
-            Dictionary produced by `__to_dict__`.
-
-        Returns
-        -------
-        ComplexityMetric
-            Instantiated complexity metric.
-        """
+        """Instantiate a ComplexityMetric component from its serialized dictionary representation."""
         return Components.instantiate(
             "ComplexityMetric",
             dict_infos["name"],
@@ -128,24 +77,8 @@ class PerformanceObjective:
     """
     Adapter wrapping existing Kartezio Fitness classes for multi-objective optimization.
 
-    Kartezio's existing single-objective framework relies on subclasses of `Fitness`
-    (e.g., IoU, AveragePrecision), which evaluate loss between ground truth masks and
-    predictions (where lower is better, 0.0 representing perfect score).
-
-    This adapter standardizes the evaluation contract into `evaluate(individual, context)`
-    so that task performance can be handled alongside `ComplexityMetric` instances
-    in NSGA-II without altering any existing Fitness implementations.
-
-    Attributes
-    ----------
-    fitness : Fitness
-        The underlying Kartezio Fitness instance. Preserved so post-hoc robustness
-        evaluation modules can access it directly.
-    name : str
-        The identifier for this objective.
-    minimize : bool
-        Whether this objective is to be minimized. Inherited from Kartezio conventions
-        where fitness functions represent error/loss (0.0 is perfect).
+    Standardizes task performance evaluation into the uniform evaluate(individual, context)
+    interface required by NSGA-II, while keeping original Fitness implementations untouched.
     """
 
     def __init__(
@@ -154,19 +87,7 @@ class PerformanceObjective:
         name: Optional[str] = None,
         minimize: bool = True,
     ):
-        """
-        Initialize the PerformanceObjective adapter.
-
-        Parameters
-        ----------
-        fitness : Fitness
-            An instantiated Kartezio Fitness object (e.g., IoU(), AveragePrecision()).
-        name : str, optional
-            Display name. Defaults to the name of the wrapped fitness class.
-        minimize : bool, default=True
-            Whether lower values are preferred. In Kartezio, Fitness metrics
-            represent loss (lower is better).
-        """
+        """Wrap an instantiated Kartezio Fitness object as an NSGA-II objective."""
         assert isinstance(
             fitness, Fitness
         ), f"Expected an instance of Fitness, got {type(fitness)}."
@@ -176,29 +97,12 @@ class PerformanceObjective:
 
     def evaluate(self, individual: Any, context: Any = None) -> float:
         """
-        Evaluate task performance for a given individual across various context formats.
+        Evaluate task performance loss for an individual across supported context types.
 
-        Supports dynamic resolution to avoid rigid caller coupling:
-        1. Context with pre-computed raw fitness or population scores.
-        2. Context containing `y_true` and `y_pred` data batches.
-        3. Context containing raw input data and decoder for on-the-fly evaluation.
-
-        Parameters
-        ----------
-        individual : Any
-            The individual genotype or integer index within the population.
-        context : Any, optional
-            Evaluation context supporting several access patterns:
-            - Population instance or object with `.score.fitness` / `.score.raw`
-            - Dict containing 'y_true' and 'y_pred'
-            - Object or dict containing 'decoder', 'x', 'y'
-
-        Returns
-        -------
-        float
-            Reduced scalar performance loss.
+        Retrieves pre-computed scores from population cache when available, evaluates
+        against provided ground truth batches, or runs the decoder on raw inputs as fallback.
         """
-        # Pattern 1: Context provides pre-computed population fitness
+        # 1. Check for pre-computed population fitness
         if hasattr(context, "score") and hasattr(context.score, "fitness"):
             if isinstance(individual, int):
                 return float(context.score.fitness[individual])
@@ -212,21 +116,20 @@ class PerformanceObjective:
             if isinstance(idx, int):
                 return float(pop.score.fitness[idx])
 
-        # Pattern 2: Context contains ground truth and predictions directly
+        # 2. Check for explicit ground truth and predictions
         if isinstance(context, dict):
             if "fitness" in context and isinstance(individual, int):
                 return float(context["fitness"][individual])
             if "y_true" in context and "y_pred" in context:
                 y_true = context["y_true"]
                 y_pred = context["y_pred"]
-                # If predictions are batched for population, index into individual
                 if isinstance(individual, int) and len(y_pred) > individual:
                     y_pred_ind = y_pred[individual]
                 else:
                     y_pred_ind = y_pred
                 return float(np.mean(self.fitness.evaluate(y_true, y_pred_ind)))
 
-        # Pattern 3: Context provides decoder and datasets to evaluate on the fly
+        # 3. Fallback: evaluate on-the-fly with decoder and data
         decoder = getattr(context, "decoder", None)
         x_data = getattr(context, "x", None)
         y_data = getattr(context, "y", None)
@@ -256,23 +159,7 @@ class PerformanceObjective:
         y_pred: DataPopulation,
         reduction: Optional[str] = None,
     ):
-        """
-        Delegate batch evaluation to the underlying Fitness component.
-
-        Parameters
-        ----------
-        y_true : DataBatch
-            Ground truth annotations.
-        y_pred : DataPopulation
-            Predictions for each individual in the population.
-        reduction : str, optional
-            Reduction strategy ('mean', 'min', 'max', 'median', or 'raw').
-
-        Returns
-        -------
-        np.ndarray
-            Evaluated fitness scores.
-        """
+        """Delegate batch prediction evaluation directly to the wrapped Fitness metric."""
         return self.fitness.batch(y_true, y_pred, reduction=reduction)
 
     def __repr__(self) -> str:
