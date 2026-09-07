@@ -81,6 +81,66 @@ That's it! Kartezio has evolved a complete image processing pipeline tailored to
 
 ---
 
+## 🎯 Multi-Objective Extension (NSGA-II) & Robustness Evaluation
+
+Kartezio now features a dedicated multi-objective extension (`kartezio.moo`) using the **NSGA-II** evolutionary algorithm. Rather than optimizing a single scalar metric, Kartezio MOO evolves an entire **Pareto front** of non-dominated pipelines balancing:
+
+- **Segmentation Quality**: Performance objectives (e.g. `IoU`, `AveragePrecision`, `MSE`) via the `PerformanceObjective` adapter.
+- **Graph Complexity**: Minimizing active processing nodes via `ActiveNodeCount` or arithmetic operations via `OperationCount`.
+- **Inference Speed**: Wall-clock execution time reduction via `ProcessTime`.
+
+### Headline Feature: Automatic Post-Hoc Robustness Evaluation
+Every pipeline that reaches the Pareto front is automatically benchmarked against real-world imaging distortions (sensor noise, optical blur, brightness variations, contrast changes, and JPEG compression). The results and retention scores are automatically printed to the console upon completion.
+
+### Minimal Multi-Objective Example
+```python
+from kartezio.core.endpoints import EndpointThreshold
+from kartezio.core.fitness import IoU
+from kartezio.moo import (
+    ActiveNodeCount,
+    KartezioMOOTrainer,
+    PerformanceObjective,
+    ProcessTime,
+)
+from kartezio.primitives.matrix import default_matrix_lib
+from kartezio.utils.dataset import one_cell_dataset
+
+train_x, train_y = one_cell_dataset()
+
+# Configure Pareto objectives
+objectives = [
+    PerformanceObjective(IoU()),
+    ActiveNodeCount(),
+    ProcessTime(),
+]
+
+trainer = KartezioMOOTrainer(
+    n_inputs=1,
+    n_nodes=20,
+    libraries=default_matrix_lib(),
+    endpoint=EndpointThreshold(128),
+    objectives=objectives,
+    population_size=16,
+)
+
+# Evolve Pareto front (automatically triggers robustness stress-testing)
+pareto_front = trainer.fit(
+    n_generations=30,
+    x_train=train_x,
+    y_train=train_y,
+    x_test=train_x,
+    y_test=train_y,
+)
+
+# Export Pareto front results with robustness metrics to DataFrame / CSV
+df = pareto_front.to_dataframe()
+print(df)
+```
+
+For complete tutorials, API references, and in-depth guides, visit the interactive documentation site (run `mkdocs serve` locally).
+
+---
+
 ## 📚 Core Concepts
 
 ### Architecture Overview
