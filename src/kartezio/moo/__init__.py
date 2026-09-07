@@ -5,16 +5,31 @@
 # (see ../LICENSE).  This file may be used, modified and redistributed
 # for non-commercial research only, and must retain this header.
 # -------------------------------------------------------------------------
-"""Public exports for the Kartezio MOO (NSGA-II) extension.
+"""
+Multi-Objective Optimization (MOO) extension for Kartezio.
 
-Provides:
-  - NSGA2Trainer  - high-level facade to run the NSGA-II algorithm.
-  - ParetoFront   - container for the final non-dominated set.
-  - FileCallback  - simple text logger written after each generation.
+Provides objectives, complexity metrics, NSGA-II evolutionary search,
+and post-hoc robustness evaluation for explainable computer vision pipelines.
 """
 
-from .trainer import NSGA2Trainer
-from .pareto import ParetoFront
 from .callbacks import FileCallback
+from .complexity import (
+    ActiveNodeCount,
+    ProcessTime,
+)
+from .objectives import (
+    ComplexityMetric,
+    PerformanceObjective,
+)
+from .pareto import ParetoFront
+from .trainer import NSGA2Trainer
 
-__all__ = ["NSGA2Trainer", "ParetoFront", "FileCallback"]
+__all__ = [
+    "ComplexityMetric",
+    "PerformanceObjective",
+    "ProcessTime",
+    "ActiveNodeCount",
+    "NSGA2Trainer",
+    "ParetoFront",
+    "FileCallback",
+]
