@@ -12,18 +12,24 @@ Provides objectives, complexity metrics, NSGA-II evolutionary search,
 and post-hoc robustness evaluation for explainable computer vision pipelines.
 """
 
-from kartezio.moo.complexity import (
+from .callbacks import FileCallback
+from .complexity import (
     ActiveNodeCount,
     ProcessTime,
 )
-from kartezio.moo.objectives import (
+from .objectives import (
     ComplexityMetric,
     PerformanceObjective,
 )
+from .pareto import ParetoFront
+from .trainer import NSGA2Trainer
 
 __all__ = [
     "ComplexityMetric",
     "PerformanceObjective",
     "ProcessTime",
     "ActiveNodeCount",
+    "NSGA2Trainer",
+    "ParetoFront",
+    "FileCallback",
 ]
