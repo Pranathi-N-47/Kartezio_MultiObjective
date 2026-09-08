@@ -80,6 +80,8 @@ print(best)
 - **[Multi-Objective Optimization Guide](moo_guide.md)** — Deep technical guide to NSGA-II
 - **[Robustness Evaluation Guide](robustness_guide.md)** — Comprehensive robustness testing guide
 
+> Documentation note: this project page is intended to provide a quick overview of the Kartezio framework and links to detailed guides for installation, usage, and robustness analysis.
+
 ---
 
 ## Citation & Licence
