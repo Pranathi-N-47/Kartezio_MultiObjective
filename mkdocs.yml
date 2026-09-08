@@ -1,5 +1,5 @@
-site_name: Kartezio Multi-Objective
-site_description: Cartesian Genetic Programming with NSGA-II Multi-Objective Optimization and Post-Hoc Robustness Evaluation
+site_name: Kartezio
+site_description: Explainable Computer Vision with Cartesian Genetic Programming
 site_author: Inserm Transfert SA and co-owners
 repo_url: https://github.com/Pranathi-N-47/kartezio-multiobjective
 repo_name: kartezio-multiobjective
@@ -26,9 +26,7 @@ theme:
     text: Inter
     code: JetBrains Mono
   features:
-    - navigation.tabs
     - navigation.sections
-    - navigation.expand
     - navigation.top
     - navigation.tracking
     - content.code.copy
@@ -36,16 +34,17 @@ theme:
     - search.suggest
     - search.highlight
 
+extra_css:
+  - css/hide-sidebar-title.css
+
 nav:
   - Home: index.md
   - Getting Started:
       - Installation: installation.md
       - Quick Start: quickstart.md
-  - User Guides:
+  - Guides:
       - Multi-Objective Optimization: moo_guide.md
       - Robustness Evaluation: robustness_guide.md
-  - Development:
-      - Collaboration Guide: collaboration.md
 
 markdown_extensions:
   - admonition
@@ -68,6 +67,8 @@ markdown_extensions:
       permalink: true
   - pymdownx.arithmatex:
       generic: true
+
+copyright: ""
 
 extra_javascript:
   - https://polyfill.io/v3/polyfill.min.js?features=es6

@@ -1,6 +1,6 @@
 ---
-title: Robustness Evaluation Guide - Kartezio Multi-Objective
-description: Dedicated guide to post-hoc robustness stress-testing, perturbation models, retention metrics, and visualization.
+title: Robustness Evaluation Guide - Kartezio
+description: Post-hoc robustness stress-testing, perturbation models, retention metrics, and visualization.
 ---
 
 # Robustness Evaluation Guide

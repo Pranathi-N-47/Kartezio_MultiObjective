@@ -1,6 +1,6 @@
 ---
-title: Installation Guide - Kartezio Multi-Objective
-description: How to install Kartezio and the Multi-Objective extension with uv or pip, including dev dependencies.
+title: Installation Guide - Kartezio
+description: How to install Kartezio with uv or pip, including dev dependencies.
 ---
 
 # Installation

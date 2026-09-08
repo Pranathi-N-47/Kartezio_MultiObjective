@@ -1,6 +1,6 @@
 ---
 title: Multi-Objective Optimization Guide - Kartezio
-description: In-depth technical guide to NSGA-II, Pareto dominance, custom complexity metrics, and robustness integration.
+description: Technical guide to NSGA-II, Pareto dominance, and robustness integration.
 ---
 
 # Multi-Objective Optimization Guide

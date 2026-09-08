@@ -1,6 +1,6 @@
 ---
-title: Quick Start Tutorial - Kartezio Multi-Objective
-description: Complete tutorial for evolving Pareto-optimal cell segmentation pipelines with NSGA-II and automatic robustness evaluation.
+title: Quick Start Tutorial - Kartezio
+description: Complete tutorial for evolving cell segmentation pipelines.
 ---
 
 # Quick Start Tutorial
